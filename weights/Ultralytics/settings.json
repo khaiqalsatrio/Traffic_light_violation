@@ -1,0 +1,19 @@
+{
+  "settings_version": "0.0.8",
+  "datasets_dir": "C:\\ML-PROJECT\\Traffic-Light-Violation-Detection-System\\datasets",
+  "weights_dir": "weights",
+  "runs_dir": "runs",
+  "uuid": "986b1581f42b1ad545be0ed31cee9de3d54ed4ae961405bee3bdec2d7068e4b6",
+  "sync": true,
+  "api_key": "",
+  "openai_api_key": "",
+  "clearml": true,
+  "comet": true,
+  "dvc": true,
+  "mlflow": true,
+  "raytune": true,
+  "tensorboard": false,
+  "wandb": false,
+  "vscode_msg": true,
+  "openvino_msg": true
+}

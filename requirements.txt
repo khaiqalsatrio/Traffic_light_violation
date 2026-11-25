@@ -1,0 +1,27 @@
+# =====================================================
+# Traffic Light Violation Detection System
+# Yogyakarta Edition - Requirements
+# =====================================================
+
+# --- Core AI & Computer Vision ---
+ultralytics>=8.0.0          # YOLOv8 object detection
+opencv-python>=4.8.0        # Image & video processing
+
+# --- Object Tracking ---
+# ByteTrack sudah terintegrasi dalam ultralytics — tidak perlu paket terpisah
+
+# --- Video Streaming ---
+yt-dlp>=2024.1.1            # YouTube Live stream downloader/reader
+
+# --- Database (PostgreSQL) ---
+psycopg2-binary>=2.9.9      # PostgreSQL adapter for Python
+python-dotenv>=1.0.0        # Load DB credentials from .env file
+
+# --- Dashboard & Visualization ---
+streamlit>=1.32.0           # Web dashboard framework
+pandas>=2.0.0               # Data manipulation
+plotly>=5.18.0              # Interactive charts
+
+# --- Utilities ---
+numpy>=1.24.0               # Numerical operations
+Pillow>=10.0.0              # Image file handling
