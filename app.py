@@ -479,7 +479,9 @@ with st.sidebar:
     st.markdown("---")
 
     # Pilih lokasi CCTV
-    location_options = {cfg["name"]: key for key, cfg in LOCATION_CONFIGS.items()}
+    location_options = {"🌐 Semua Lokasi (Semua Simpang & Live CCTV)": "all"}
+    location_options.update({cfg["name"]: key for key, cfg in LOCATION_CONFIGS.items()})
+    
     selected_name = st.selectbox(
         "📍 Pilih Lokasi CCTV",
         options=list(location_options.keys()),
@@ -531,11 +533,14 @@ except Exception as e:
 # =====================================================
 # AMBIL DATA
 # =====================================================
-total_today = db.get_total_today(location=selected_location if selected_location != "all" else None)
-hourly_data = db.get_violations_by_hour(date=selected_date_str, location=selected_location)
-vehicle_data = db.get_violations_by_vehicle_type(date=selected_date_str, location=selected_location)
+# Normalisasi filter lokasi (jika 'all' maka query tanpa filter lokasi)
+query_location = None if selected_location in ["all", "cctv_live"] else selected_location
+
+total_today = db.get_total_today(location=query_location)
+hourly_data = db.get_violations_by_hour(date=selected_date_str, location=query_location)
+vehicle_data = db.get_violations_by_vehicle_type(date=selected_date_str, location=query_location)
 weekly_data = db.get_weekly_summary()
-recent_violations = db.get_recent_violations(limit=MAX_GALLERY_IMAGES, location=selected_location)
+recent_violations = db.get_recent_violations(limit=MAX_GALLERY_IMAGES, location=query_location)
 peak_hour_info = db.get_peak_hour(date=selected_date_str)
 
 # Hitung data kemarin untuk delta metric
@@ -547,6 +552,7 @@ total_yesterday = len(db.get_violations_by_hour(date=yesterday_str, location=sel
 # =====================================================
 col_title, col_badge = st.columns([4, 1])
 with col_title:
+    loc_desc = LOCATION_CONFIGS[selected_location]['description'] if selected_location in LOCATION_CONFIGS else "Pemantauan Pelanggaran Seluruh Simpang CCTV Yogyakarta"
     st.markdown(f"""
     <h1 style='margin:0; font-size:1.8rem; font-weight:800;
                background: linear-gradient(135deg, #e2e8f0, #63b3ed);
@@ -554,7 +560,7 @@ with col_title:
         🚦 Traffic Violation Monitor
     </h1>
     <p style='margin:4px 0 0; color:#475569; font-size:0.95rem;'>
-        {LOCATION_CONFIGS[selected_location]['description']}
+        {loc_desc}
     </p>
     """, unsafe_allow_html=True)
 with col_badge:
@@ -799,10 +805,17 @@ with tab_live:
             if btn_stop_ai:
                 st.session_state["live_yolo_active"] = False
 
-            with st.expander("⚙️ Konfigurasi Garis Henti & ROI Lampu Merah (Simpang Ini)"):
+            with st.expander("⚙️ Konfigurasi Lajur Simpang, Garis Henti & AI Sensitivity (Simpang Ini)"):
                 cfg_c1, cfg_c2 = st.columns(2)
                 custom_stopline_y = cfg_c1.slider("📏 Posisi Garis Henti (Y pixel)", 100, 700, 420, 10, key="cctv_tab_stopline_y")
                 custom_roi_x = cfg_c2.slider("🚦 Posisi ROI Lampu (X pixel)", 100, 1200, 900, 20, key="cctv_tab_roi_x")
+                
+                cfg_c3, cfg_c4 = st.columns(2)
+                lane_range_x = cfg_c3.slider("🛣️ Batas Lajur Jalan Terpantau (X min - max pixel)", 0, 1280, (50, 1230), 10, key="cctv_tab_lane_x",
+                                             help="Batasi hanya pada lajur yang menuju lampu merah agar arus dari simpang lain tidak terdeteksi salah.")
+                ai_sensitivity = cfg_c4.slider("🎯 AI Confidence (Turunkan saat Malam Hari)", 0.15, 0.70, 0.30, 0.05, key="cctv_tab_conf",
+                                              help="Gunakan 0.20 - 0.25 saat malam hari agar motor di tempat gelap langsung terdeteksi.")
+                night_enhancement = cfg_c4.checkbox("🌙 Aktifkan Night Vision (Pencerah Kontras Motor Gelap)", value=True, key="cctv_tab_night_mode")
 
             frame_placeholder = st.empty()
             metrics_placeholder = st.empty()
@@ -813,17 +826,19 @@ with tab_live:
                     st.session_state["live_yolo_active"] = False
                     st.rerun()
 
-                # Update konfigurasi cctv_live
+                # Update konfigurasi cctv_live dengan batas lajur jalan yang dipantau
+                lane_x1, lane_x2 = lane_range_x
                 LOCATION_CONFIGS["cctv_live"] = {
                     "name": cam_name,
                     "source": stream_url,
                     "source_type": "hls",
-                    "stopline": (50, custom_stopline_y, 1230, custom_stopline_y),
+                    "stopline": (lane_x1, custom_stopline_y, lane_x2, custom_stopline_y),
                     "traffic_light_roi": (custom_roi_x, 30, 150, 200),
                     "description": f"Live CCTV: {cam_name}",
                 }
 
                 eng = TrafficViolationEngine("cctv_live", db_manager=db)
+                eng.night_mode = night_enhancement
                 eng._load_model()
                 cap = eng._open_video_source()
                 try:
@@ -855,8 +870,8 @@ with tab_live:
                         light_c = eng.detect_traffic_light_color(frame)
                         eng.is_red_light = (light_c == "red")
 
-                        # Tracking AI YOLOv8 + ByteTrack
-                        tracks = eng._track_frame(frame)
+                        # Tracking AI YOLOv8 + ByteTrack dengan confidence yang dapat diatur
+                        tracks = eng._track_frame(frame, conf_threshold=ai_sensitivity)
 
                         # Cek pelanggaran jika lampu merah
                         if eng.is_red_light:
@@ -880,7 +895,7 @@ with tab_live:
                         # Render overlay kotak deteksi AI mengikuti kendaraan nyata & label jarak
                         annotated = eng._draw_overlay(frame.copy(), tracks, fps_val)
                         rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-                        frame_placeholder.image(rgb, use_container_width=True)
+                        frame_placeholder.image(rgb, width='stretch')
 
                         # Update status metrics bar (menggunakan HTML markdown agar streaming lancar tanpa error container)
                         if frames_run % 4 == 0:
@@ -927,7 +942,7 @@ with tab_live:
                         tracks = eng._track_frame(frame)
                         annotated = eng._draw_overlay(frame.copy(), tracks, 30.0)
                         rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-                        frame_placeholder.image(rgb, use_container_width=True)
+                        frame_placeholder.image(rgb, width='stretch')
                         m1, m2, m3 = metrics_placeholder.columns(3)
                         m1.metric("🚗 Kendaraan Terdeteksi", len(tracks))
                         m2.metric("🚦 Status Lampu", "🔴 MERAH" if eng.is_red_light else "🟢 HIJAU")
@@ -1848,7 +1863,7 @@ with tab_galeri:
                             st.image(
                                 v["evidence_img_path"],
                                 caption=f"{vtype} | ID #{v.get('vehicle_id')} | {ts_str}",
-                                use_container_width=True,
+                                width='stretch',
                             )
         else:
             st.info("📁 File foto bukti tidak ditemukan di disk. Pastikan engine sudah berjalan dan menyimpan gambar ke folder `evidence_images/`.")

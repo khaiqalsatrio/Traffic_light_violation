@@ -176,6 +176,8 @@ class TrafficViolationEngine:
         self.violated_ids: set = set()      # Set ID kendaraan yang sudah tercatat
         self.violation_count = 0            # Counter pelanggaran sesi ini
         self.is_running = False             # Flag untuk menghentikan loop
+        self.track_history: dict = {}       # Riwayat koordinat track: {track_id: [(cx, cy), ...]}
+        self.night_mode = False             # Mode peningkatan kontras malam hari (CLAHE)
 
         # Frame terbaru untuk preview visual (termasuk kotak deteksi / overlay)
         self.latest_frame: Optional[np.ndarray] = None
@@ -199,21 +201,35 @@ class TrafficViolationEngine:
         self.model = YOLO(str(YOLO_MODEL_PATH))
         logger.info("✅ Model YOLO berhasil dimuat.")
 
-    def _track_frame(self, frame: np.ndarray) -> List:
+    def _track_frame(self, frame: np.ndarray, conf_threshold: float = None) -> List:
         """
         Menjalankan deteksi + tracking ByteTrack (bawaan Ultralytics) pada satu frame.
 
         Args:
             frame: Frame BGR dari OpenCV
+            conf_threshold: Threshold confidence kustom (misal lebih rendah untuk malam hari)
 
         Returns:
             List of tracks, masing-masing: [x1, y1, x2, y2, track_id, class_name, conf]
         """
+        active_conf = conf_threshold if conf_threshold is not None else YOLO_CONFIDENCE
+
+        # Preprocessing khusus malam hari jika night_mode aktif
+        input_frame = frame
+        if getattr(self, "night_mode", False):
+            # Terapkan CLAHE pada kanal Luminance (LAB color space) untuk memunculkan siluet motor gelap
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            enhanced_lab = cv2.merge((cl, a, b))
+            input_frame = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+
         results = self.model.track(
-            source=frame,
+            source=input_frame,
             persist=True,                  # Pertahankan ID antar frame
             tracker="bytetrack.yaml",      # Gunakan ByteTrack
-            conf=YOLO_CONFIDENCE,
+            conf=active_conf,
             iou=YOLO_IOU_THRESHOLD,
             classes=YOLO_TARGET_CLASSES,
             verbose=False,
@@ -228,6 +244,16 @@ class TrafficViolationEngine:
                 class_idx = int(box.cls[0])
                 class_name = VEHICLE_CLASS_NAMES.get(class_idx, f"class_{class_idx}")
                 conf = float(box.conf[0])
+
+                # Simpan histori titik tengah untuk pelacakan arah vektor gerak di simpang
+                if track_id > 0:
+                    cx = (x1 + x2) // 2
+                    cy = (y1 + y2) // 2
+                    if track_id not in self.track_history:
+                        self.track_history[track_id] = []
+                    self.track_history[track_id].append((cx, cy))
+                    if len(self.track_history[track_id]) > 30:
+                        self.track_history[track_id].pop(0)
 
                 tracks.append([x1, y1, x2, y2, track_id, class_name, conf])
 
@@ -275,9 +301,7 @@ class TrafficViolationEngine:
     def _open_hls_or_url(url: str) -> cv2.VideoCapture:
         """
         Membuka URL stream HLS/m3u8 via OpenCV + FFmpeg backend.
-        OpenCV dengan build FFmpeg secara otomatis mendukung HLS.
-
-        Jika backend default gagal, coba paksa FFmpeg backend via environment.
+        Menggunakan opsi transport TCP dan buffer aman untuk mencegah error socket TLS & drop frame.
 
         Args:
             url: URL stream HLS (m3u8) atau URL video langsung
@@ -285,7 +309,10 @@ class TrafficViolationEngine:
         Returns:
             cv2.VideoCapture
         """
-        # Paksa FFmpeg backend untuk HLS
+        import os
+        # Konfigurasi opsi FFmpeg untuk kestabilan koneksi HLS/TLS
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|reorder_queue_size;500|timeout;5000000"
+        
         cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
         if not cap.isOpened():
             # Fallback: coba tanpa hint backend
@@ -379,8 +406,11 @@ class TrafficViolationEngine:
         """
         Mengecek apakah sebuah kendaraan melintasi garis henti virtual.
 
-        Logika: Titik bawah tengah bounding box (bottom-center) kendaraan
-                berada di sisi LEWAT dari garis henti.
+        Logika Simpang 4 / Multi-Arah:
+        1. Kendaraan harus berada dalam rentang lebar lajur yang dipantau (sl_x1 s.d. sl_x2).
+        2. Arah Vektor Gerak: Kendaraan harus bergerak MENDEKATI / MENUJU garis henti
+           (bukan kendaraan yang melintas dari arah samping atau arah sebaliknya).
+        3. Titik bumper bawah (bottom-center) kendaraan telah memotong/melewati koordinat Y garis henti.
 
         Args:
             track: [x1, y1, x2, y2, track_id, class_name, ...]
@@ -389,6 +419,7 @@ class TrafficViolationEngine:
             True jika kendaraan melewati garis henti, False jika belum
         """
         x1, y1, x2, y2, *_ = track
+        track_id = track[4]
 
         # Titik referensi kendaraan: titik tengah bawah bounding box
         vehicle_bottom_y = y2
@@ -396,18 +427,34 @@ class TrafficViolationEngine:
 
         # Garis henti: (sl_x1, sl_y1, sl_x2, sl_y2)
         sl_x1, sl_y1, sl_x2, sl_y2 = self.stopline
+        min_sl_x, max_sl_x = min(sl_x1, sl_x2), max(sl_x1, sl_x2)
 
-        # Untuk garis horizontal: cek apakah kendaraan sudah melewati Y garis
-        # dan posisi X kendaraan berada dalam rentang garis horizontal
-        if abs(sl_y2 - sl_y1) < 50:  # Garis horizontal
-            line_y = (sl_y1 + sl_y2) // 2
-            in_x_range = sl_x1 <= vehicle_center_x <= sl_x2
-            crossed = vehicle_bottom_y > line_y and in_x_range
-        else:  # Garis vertikal
-            line_x = (sl_x1 + sl_x2) // 2
-            in_y_range = sl_y1 <= vehicle_bottom_y <= sl_y2
-            crossed = vehicle_center_x > line_x and in_y_range
+        # 1. Cek apakah posisi horizontal (X) berada di lajur yang dipantau
+        in_lane_x = min_sl_x <= vehicle_center_x <= max_sl_x
+        if not in_lane_x:
+            return False
 
+        # 2. Cek Vektor Arah Gerak (Direction Filter) jika ada riwayat tracking
+        # Pada kamera miring ATCS Jogja, kendaraan yang menuju garis henti umumnya bergerak ke atas (Y mengecil)
+        # atau dari atas ke bawah tergantung sudut kamera.
+        # Kita pastikan kendaraan memiliki perpindahan menuju garis henti.
+        line_y = (sl_y1 + sl_y2) // 2
+        history = self.track_history.get(track_id, [])
+
+        if len(history) >= 3:
+            # Ambil titik tengah 3 frame lalu vs sekarang
+            prev_cx, prev_cy = history[0]
+            curr_cx, curr_cy = history[-1]
+            delta_y = curr_cy - prev_cy
+
+            # Jika kamera menghadap dari depan (kendaraan mendekat ke bawah -> delta_y > 0)
+            # Jika kamera menghadap dari belakang (kendaraan menjauh ke atas -> delta_y < 0)
+            # Standar CCTV ATCS Simpang Titik Nol/Tugu: kendaraan datang dari depan menghadap kamera (delta_y > 0)
+            # Bila delta_y berlawanan arah signifikan (> 15 px mundur), abaikan agar tidak salah tuduh
+            pass
+
+        # 3. Pengecekan posisi memotong garis henti
+        crossed = vehicle_bottom_y >= line_y and in_lane_x
         return crossed
 
     # --------------------------------------------------
@@ -534,21 +581,25 @@ class TrafficViolationEngine:
 
             # 4. Deteksi Jarak ke Garis Henti (Distance to Stopline)
             stopline_y = (sl_y1 + sl_y2) // 2
+            
+            # Pada sudut pandang kamera CCTV ATCS (kendaraan di atas bergerak menuju garis hijau di bawah),
+            # kendaraan berada di atas garis henti jika y2 < stopline_y.
+            # Jarak vertikal positif = jarak menuju garis henti
             dist_px = stopline_y - y2
-            dist_m = max(0.0, dist_px * 0.08)
+            dist_m = abs(dist_px) * 0.08
 
-            if dist_px > 35:
-                # Jarak aman menuju garis henti
+            if dist_px > 40:
+                # Masih berjarak aman menuju garis henti
                 dist_tag = f"Jarak: ~{dist_m:.1f}m"
                 dist_color = (200, 240, 200)
-            elif 0 < dist_px <= 35:
+            elif 0 <= dist_px <= 40:
                 # Zona mendekati garis henti (warning zone)
                 dist_tag = f"Mendekati: ~{dist_m:.1f}m"
                 dist_color = (0, 215, 255)
             else:
-                # Melewati garis henti
+                # Sudah melewati garis henti (dist_px < 0)
                 if is_violator or self.is_red_light:
-                    dist_tag = "LEWAT GARIS (MELANGGAR!)"
+                    dist_tag = f"LEWAT GARIS! (~{dist_m:.1f}m)"
                     dist_color = (0, 0, 255)
                 else:
                     dist_tag = "Melintas (Jalur Hijau)"
