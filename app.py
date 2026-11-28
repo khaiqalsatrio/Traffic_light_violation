@@ -37,179 +37,317 @@ st.set_page_config(
 )
 
 # =====================================================
-# CUSTOM CSS – DARK THEME PREMIUM
+# CUSTOM CSS – ADAPTIVE DARK / LIGHT THEME
 # =====================================================
-st.markdown("""
+is_light_theme = st.session_state.get("theme_toggle_switch", False)
+
+_theme_vars = {
+    "app_bg": "linear-gradient(135deg, #f8fafc 0%, #eff6ff 55%, #f1f5f9 100%)" if is_light_theme else "radial-gradient(circle at top right, #111c36 0%, #090e1a 55%, #070b14 100%)",
+    "text_main": "#0f172a" if is_light_theme else "#f1f5f9",
+    "text_muted": "#475569" if is_light_theme else "#94a3b8",
+    "sidebar_bg": "#ffffff" if is_light_theme else "#0b1120",
+    "sidebar_border": "#e2e8f0" if is_light_theme else "rgba(148, 163, 184, 0.12)",
+    "sidebar_h": "#1d4ed8" if is_light_theme else "#93c5fd",
+    "card_bg": "#ffffff" if is_light_theme else "rgba(15, 23, 42, 0.72)",
+    "card_border": "#e2e8f0" if is_light_theme else "rgba(148, 163, 184, 0.14)",
+    "card_shadow": "0 4px 16px rgba(15, 23, 42, 0.06)" if is_light_theme else "0 4px 20px rgba(0, 0, 0, 0.22)",
+    "tab_list_bg": "#e2e8f0" if is_light_theme else "rgba(15, 23, 42, 0.75)",
+    "tab_text": "#475569" if is_light_theme else "#94a3b8",
+    "input_bg": "#ffffff" if is_light_theme else "rgba(15, 23, 42, 0.85)",
+    "input_border": "#cbd5e1" if is_light_theme else "rgba(148, 163, 184, 0.2)",
+    "badge_red_bg": "#fee2e2" if is_light_theme else "rgba(220, 38, 38, 0.16)",
+    "badge_red_fg": "#b91c1c" if is_light_theme else "#fca5a5",
+    "badge_green_bg": "#dcfce7" if is_light_theme else "rgba(22, 163, 74, 0.16)",
+    "badge_green_fg": "#15803d" if is_light_theme else "#86efac",
+    "btn_sec_bg": "#f1f5f9" if is_light_theme else "rgba(30, 41, 59, 0.8)",
+    "btn_sec_fg": "#0f172a" if is_light_theme else "#f1f5f9",
+    "code_bg": "#e2e8f0" if is_light_theme else "rgba(30, 41, 59, 0.9)",
+    "code_fg": "#1e40af" if is_light_theme else "#93c5fd",
+}
+
+st.markdown(f"""
 <style>
     /* Import Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
     /* Root & background */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
-    .stApp {
-        background: linear-gradient(135deg, #0a0e1a 0%, #0d1225 50%, #0a1628 100%);
-        color: #e2e8f0;
-    }
+    html, body, [class*="css"] {{
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }}
+    .stApp {{
+        background: {_theme_vars['app_bg']};
+        color: {_theme_vars['text_main']};
+    }}
+    header[data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+    .block-container {{
+        padding-top: 1.4rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 1380px !important;
+    }}
+    #MainMenu {{ visibility: hidden; }}
+    footer {{ visibility: hidden; }}
+
+    /* Global text & widget label contrast */
+    .stApp p, .stApp span, .stApp label, .stApp div {{
+        color: {_theme_vars['text_main']};
+    }}
+    .stApp .stCaption, .stApp [data-testid="stCaptionContainer"] p {{
+        color: {_theme_vars['text_muted']} !important;
+    }}
+    .stApp code {{
+        background: {_theme_vars['code_bg']} !important;
+        color: {_theme_vars['code_fg']} !important;
+        padding: 2px 6px;
+        border-radius: 6px;
+    }}
 
     /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f1629 0%, #111827 100%);
-        border-right: 1px solid rgba(99, 179, 237, 0.15);
-    }
+    section[data-testid="stSidebar"] {{
+        background: {_theme_vars['sidebar_bg']};
+        border-right: 1px solid {_theme_vars['sidebar_border']};
+    }}
     section[data-testid="stSidebar"] .stMarkdown h1,
     section[data-testid="stSidebar"] .stMarkdown h2,
-    section[data-testid="stSidebar"] .stMarkdown h3 {
-        color: #63b3ed;
-    }
+    section[data-testid="stSidebar"] .stMarkdown h3 {{
+        color: {_theme_vars['sidebar_h']} !important;
+    }}
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] span {{
+        color: {_theme_vars['text_main']} !important;
+    }}
 
     /* Metric cards */
-    [data-testid="metric-container"] {
-        background: linear-gradient(135deg, rgba(15,22,48,0.9) 0%, rgba(17,24,39,0.9) 100%);
-        border: 1px solid rgba(99,179,237,0.2);
-        border-radius: 16px;
-        padding: 20px 24px !important;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    [data-testid="metric-container"]:hover {
+    [data-testid="metric-container"] {{
+        background: {_theme_vars['card_bg']} !important;
+        border: 1px solid {_theme_vars['card_border']} !important;
+        border-radius: 14px;
+        padding: 16px 20px !important;
+        backdrop-filter: blur(12px);
+        box-shadow: {_theme_vars['card_shadow']};
+        transition: transform 0.18s ease, border-color 0.18s ease;
+    }}
+    [data-testid="metric-container"]:hover {{
         transform: translateY(-2px);
-        box-shadow: 0 8px 32px rgba(99,179,237,0.15);
-    }
-    [data-testid="metric-container"] label {
-        color: #94a3b8 !important;
-        font-size: 0.78rem !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.08em !important;
+        border-color: rgba(59, 130, 246, 0.55) !important;
+    }}
+    [data-testid="metric-container"] label,
+    [data-testid="metric-container"] [data-testid="stMetricLabel"],
+    [data-testid="metric-container"] [data-testid="stMetricLabel"] p {{
+        color: {_theme_vars['text_muted']} !important;
+        font-size: 0.76rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.04em !important;
         text-transform: uppercase !important;
-    }
-    [data-testid="metric-container"] [data-testid="stMetricValue"] {
-        color: #e2e8f0 !important;
-        font-size: 2.4rem !important;
+    }}
+    [data-testid="metric-container"] [data-testid="stMetricValue"],
+    [data-testid="metric-container"] [data-testid="stMetricValue"] > div {{
+        color: {_theme_vars['text_main']} !important;
+        font-size: 2rem !important;
         font-weight: 700 !important;
-        line-height: 1.1 !important;
-    }
-    [data-testid="metric-container"] [data-testid="stMetricDelta"] {
-        font-size: 0.82rem !important;
-    }
+        line-height: 1.15 !important;
+    }}
+    [data-testid="metric-container"] [data-testid="stMetricDelta"],
+    [data-testid="metric-container"] [data-testid="stMetricDelta"] div {{
+        font-size: 0.8rem !important;
+    }}
 
     /* Section headers */
-    .section-header {
-        font-size: 1.1rem;
-        font-weight: 600;
-        color: #63b3ed;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
+    .section-header {{
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: {_theme_vars['text_main']} !important;
+        letter-spacing: 0.01em;
         margin-bottom: 12px;
         padding-bottom: 8px;
-        border-bottom: 2px solid rgba(99,179,237,0.3);
-    }
+        border-bottom: 1px solid {_theme_vars['card_border']};
+    }}
 
     /* Status badge */
-    .badge-red {
-        display: inline-block;
-        background: linear-gradient(135deg, #7f1d1d, #991b1b);
-        color: #fca5a5;
-        border: 1px solid rgba(252,165,165,0.3);
-        border-radius: 20px;
-        padding: 4px 14px;
-        font-size: 0.82rem;
+    .badge-red {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: {_theme_vars['badge_red_bg']};
+        color: {_theme_vars['badge_red_fg']} !important;
+        border: 1px solid rgba(248, 113, 113, 0.4);
+        border-radius: 999px;
+        padding: 5px 14px;
+        font-size: 0.8rem;
         font-weight: 600;
-        letter-spacing: 0.05em;
-    }
-    .badge-green {
-        display: inline-block;
-        background: linear-gradient(135deg, #14532d, #166534);
-        color: #86efac;
-        border: 1px solid rgba(134,239,172,0.3);
-        border-radius: 20px;
-        padding: 4px 14px;
-        font-size: 0.82rem;
+    }}
+    .badge-green {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: {_theme_vars['badge_green_bg']};
+        color: {_theme_vars['badge_green_fg']} !important;
+        border: 1px solid rgba(74, 222, 128, 0.4);
+        border-radius: 999px;
+        padding: 5px 14px;
+        font-size: 0.8rem;
         font-weight: 600;
-        letter-spacing: 0.05em;
-    }
+    }}
 
     /* Stat card custom */
-    .stat-card {
-        background: linear-gradient(135deg, rgba(15,22,48,0.95), rgba(17,24,39,0.95));
-        border: 1px solid rgba(99,179,237,0.18);
+    .stat-card {{
+        background: {_theme_vars['card_bg']};
+        border: 1px solid {_theme_vars['card_border']};
         border-radius: 14px;
-        padding: 20px;
+        padding: 18px;
         text-align: center;
-        backdrop-filter: blur(8px);
-    }
-    .stat-card .stat-value {
-        font-size: 2.8rem;
+        box-shadow: {_theme_vars['card_shadow']};
+    }}
+    .stat-card .stat-value {{
+        font-size: 2.3rem;
         font-weight: 800;
-        background: linear-gradient(135deg, #63b3ed, #a78bfa);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        line-height: 1;
-    }
-    .stat-card .stat-label {
-        color: #64748b;
-        font-size: 0.78rem;
-        font-weight: 500;
+        color: #2563eb !important;
+        line-height: 1.1;
+    }}
+    .stat-card .stat-label {{
+        color: {_theme_vars['text_muted']} !important;
+        font-size: 0.76rem;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
         margin-top: 6px;
-    }
+    }}
 
-    /* Dataframe styling */
-    .stDataFrame {
+    /* Buttons & Expanders */
+    .stButton > button {{
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        transition: all 0.15s ease !important;
+    }}
+    .stButton > button[kind="primary"] p {{
+        color: #ffffff !important;
+    }}
+    .stButton > button[kind="secondary"] {{
+        background: {_theme_vars['btn_sec_bg']} !important;
+        color: {_theme_vars['btn_sec_fg']} !important;
+        border: 1px solid {_theme_vars['card_border']} !important;
+    }}
+    .stButton > button[kind="secondary"] p {{
+        color: {_theme_vars['btn_sec_fg']} !important;
+    }}
+    details[data-testid="stExpander"] {{
+        background: {_theme_vars['card_bg']} !important;
+        border: 1px solid {_theme_vars['card_border']} !important;
+        border-radius: 12px !important;
+        box-shadow: {_theme_vars['card_shadow']};
+    }}
+    details[data-testid="stExpander"] summary {{
+        background: transparent !important;
+        color: {_theme_vars['text_main']} !important;
+    }}
+    details[data-testid="stExpander"] summary:hover {{
+        background: rgba(59, 130, 246, 0.08) !important;
+    }}
+    details[data-testid="stExpander"] label,
+    details[data-testid="stExpander"] p,
+    details[data-testid="stExpander"] span {{
+        color: {_theme_vars['text_main']} !important;
+    }}
+
+    /* Dataframe & Plotly */
+    .stDataFrame {{
         border-radius: 12px;
         overflow: hidden;
-        border: 1px solid rgba(99,179,237,0.15);
-    }
-
-    /* Plotly chart containers */
-    .js-plotly-plot {
+        border: 1px solid {_theme_vars['card_border']};
+    }}
+    .js-plotly-plot {{
         border-radius: 14px;
-    }
+    }}
 
     /* Divider */
-    hr {
-        border-color: rgba(99,179,237,0.15) !important;
-        margin: 24px 0 !important;
-    }
+    hr {{
+        border-color: {_theme_vars['card_border']} !important;
+        margin: 18px 0 !important;
+    }}
 
     /* Image gallery */
-    .evidence-card {
-        background: rgba(15,22,48,0.9);
-        border: 1px solid rgba(99,179,237,0.2);
+    .evidence-card {{
+        background: {_theme_vars['card_bg']};
+        border: 1px solid {_theme_vars['card_border']};
         border-radius: 12px;
         padding: 8px;
         text-align: center;
-        font-size: 0.72rem;
-        color: #94a3b8;
-    }
+        font-size: 0.74rem;
+        color: {_theme_vars['text_muted']};
+    }}
 
     /* Tab styling */
-    .stTabs [data-baseweb="tab-list"] {
-        background: rgba(15,22,48,0.6);
+    .stTabs [data-baseweb="tab-list"] {{
+        background: {_theme_vars['tab_list_bg']};
+        border: 1px solid {_theme_vars['card_border']};
         border-radius: 12px;
-        padding: 4px;
-        gap: 4px;
-    }
-    .stTabs [data-baseweb="tab"] {
+        padding: 5px;
+        gap: 6px;
+        flex-wrap: wrap;
+    }}
+    .stTabs [data-baseweb="tab"] {{
         border-radius: 8px;
-        color: #64748b;
-        font-weight: 500;
-    }
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #1e40af, #1d4ed8) !important;
-        color: white !important;
-    }
+        color: {_theme_vars['tab_text']} !important;
+        font-weight: 600;
+        padding: 8px 14px;
+    }}
+    .stTabs [data-baseweb="tab"] p {{
+        color: inherit !important;
+    }}
+    .stTabs [aria-selected="true"] {{
+        background: #2563eb !important;
+        color: #ffffff !important;
+        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+    }}
+    .stTabs [aria-selected="true"] p {{
+        color: #ffffff !important;
+    }}
 
-    /* Selectbox */
-    .stSelectbox > div > div {
-        background: rgba(15,22,48,0.8) !important;
-        border: 1px solid rgba(99,179,237,0.2) !important;
+    /* Inputs, DateInput & Selectbox */
+    .stSelectbox > div > div,
+    .stTextInput > div > div > input,
+    .stDateInput > div > div > input,
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="base-input"] {{
+        background: {_theme_vars['input_bg']} !important;
+        border: 1px solid {_theme_vars['input_border']} !important;
         border-radius: 10px !important;
-        color: #e2e8f0 !important;
-    }
+        color: {_theme_vars['text_main']} !important;
+    }}
+    .stSelectbox div[data-baseweb="select"] span,
+    .stTextInput input,
+    .stDateInput input {{
+        color: {_theme_vars['text_main']} !important;
+    }}
+    .stSelectbox label, .stTextInput label, .stDateInput label,
+    .stRadio label, .stCheckbox label, .stSlider label {{
+        color: {_theme_vars['text_main']} !important;
+    }}
+
+    /* Responsive adjustments */
+    @media (max-width: 992px) {{
+        .block-container {{
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }}
+        [data-testid="metric-container"] {{
+            padding: 12px 14px !important;
+        }}
+        [data-testid="metric-container"] [data-testid="stMetricValue"] {{
+            font-size: 1.65rem !important;
+        }}
+    }}
+    @media (max-width: 640px) {{
+        .stTabs [data-baseweb="tab"] {{
+            padding: 6px 10px;
+            font-size: 0.82rem;
+        }}
+        h1 {{
+            font-size: 1.35rem !important;
+        }}
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -477,6 +615,7 @@ def build_weekly_bar(weekly_data: list) -> go.Figure:
 with st.sidebar:
     st.markdown("## 🚦 Traffic Monitor")
     st.markdown("**Yogyakarta Edition**")
+    st.toggle("☀️ Mode Terang (Light Mode)", value=False, key="theme_toggle_switch")
     st.markdown("---")
 
     # Pilih lokasi CCTV
@@ -554,13 +693,13 @@ total_yesterday = len(db.get_violations_by_hour(date=yesterday_str, location=sel
 col_title, col_badge = st.columns([4, 1])
 with col_title:
     loc_desc = LOCATION_CONFIGS[selected_location]['description'] if selected_location in LOCATION_CONFIGS else "Pemantauan Pelanggaran Seluruh Simpang CCTV Yogyakarta"
+    title_color = "#0f172a" if is_light_theme else "#f8fafc"
+    desc_color = "#475569" if is_light_theme else "#94a3b8"
     st.markdown(f"""
-    <h1 style='margin:0; font-size:1.8rem; font-weight:800;
-               background: linear-gradient(135deg, #e2e8f0, #63b3ed);
-               -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>
+    <h1 style='margin:0; font-size:1.75rem; font-weight:800; color:{title_color}; line-height:1.2;'>
         🚦 Traffic Violation Monitor
     </h1>
-    <p style='margin:4px 0 0; color:#475569; font-size:0.95rem;'>
+    <p style='margin:4px 0 0; color:{desc_color}; font-size:0.92rem;'>
         {loc_desc}
     </p>
     """, unsafe_allow_html=True)
@@ -613,10 +752,10 @@ st.markdown("---")
 # TAB UTAMA
 # =====================================================
 tab_live, tab_engine, tab_analitik, tab_log, tab_galeri = st.tabs([
-    "🚦  Live CCTV Lampu Merah",
-    "🎯  Engine Deteksi Real-time",
-    "📊  Analitik & Grafik",
-    "📋  Log Pelanggaran",
+    "📹  Live CCTV & AI",
+    "⚙️  Engine Latar",
+    "📊  Statistik",
+    "📋  Data Log",
     "🖼  Galeri Bukti",
 ])
 
@@ -632,31 +771,6 @@ tab_live, tab_engine, tab_analitik, tab_log, tab_galeri = st.tabs([
 HLS_CORS_PROXY = "https://corsproxy.io/?"  # fallback jika stream tidak bisa diakses langsung
 
 with tab_live:
-    st.markdown(
-        '<div class="section-header">🚦 Live CCTV Lampu Merah — Seluruh Yogyakarta</div>',
-        unsafe_allow_html=True
-    )
-
-    # Info sumber
-    st.markdown("""
-    <div style='
-        background: rgba(30,64,175,0.15);
-        border: 1px solid rgba(99,179,237,0.25);
-        border-radius: 10px;
-        padding: 10px 16px; 
-        font-size: 0.82rem;
-        color: #93c5fd;
-        margin-bottom: 16px;
-    '>
-        🚦 Sumber: <b>ATCS Jogja Istimewa — API Resmi Pemprov DIY</b> &nbsp;|&nbsp;
-        Menampilkan kamera <b>simpang / lampu merah</b> di seluruh wilayah Yogyakarta &nbsp;|&nbsp;
-        <a href="https://cctv.jogjaprov.go.id" target="_blank"
-            style="color:#63b3ed">cctv.jogjaprov.go.id</a>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_pick, col_info = st.columns([2, 1])
-
     # ── CCTV LAMPU MERAH — API RESMI ATCS JOGJA ──────────────────
     tl_items = fetch_traffic_light_cctv()
 
@@ -674,59 +788,51 @@ with tab_live:
             connected = "🟢" if attrs.get("connected") else "🔴"
             return f"{connected} {name}"
 
-        with col_pick:
-            # Filter wilayah
+        # Baris Pemilihan Kamera yang Rapi & Simpel (3 Kolom Sejajar)
+        pick_c1, pick_c2, pick_c3 = st.columns([1.1, 1.3, 1.8])
+
+        with pick_c1:
             all_wilayah = ["🌏 Semua Wilayah"] + sorted(wilayah_groups.keys())
             sel_wilayah = st.selectbox(
-                "🗺 Filter Wilayah",
+                "🗺 Wilayah",
                 options=all_wilayah,
                 key="tl_wilayah"
             )
 
-            # Tentukan item berdasarkan wilayah
-            if sel_wilayah == "🌏 Semua Wilayah":
-                filtered_items = tl_items
-            else:
-                filtered_items = wilayah_groups.get(sel_wilayah, [])
+        if sel_wilayah == "🌏 Semua Wilayah":
+            filtered_items = tl_items
+        else:
+            filtered_items = wilayah_groups.get(sel_wilayah, [])
 
-            # Pencarian nama simpang
+        with pick_c2:
             search_q = st.text_input(
-                "🔍 Cari nama simpang / persimpangan",
-                placeholder="contoh: Simpang Tugu, Bundaran UGM, Monjali...",
+                "🔍 Cari Simpang / Lokasi",
+                placeholder="contoh: Gondomanan, Nol Km...",
                 key="tl_search"
             )
-            if search_q:
-                q_words = search_q.lower().split()
-                filtered_items = [
-                    i for i in filtered_items
-                    if all(
-                        w in (
-                            (i["attributes"].get("alias_name") or "") + " " +
-                            (i["attributes"].get("name") or "")
-                        ).lower()
-                        for w in q_words
-                    )
-                ]
 
-            # Hitung statistik
-            total_cam   = len(tl_items)
-            online_cam  = sum(1 for i in tl_items if i["attributes"].get("connected"))
-            shown_cam   = len(filtered_items)
+        if search_q:
+            q_words = search_q.lower().split()
+            filtered_items = [
+                i for i in filtered_items
+                if all(
+                    w in (
+                        (i["attributes"].get("alias_name") or "") + " " +
+                        (i["attributes"].get("name") or "")
+                    ).lower()
+                    for w in q_words
+                )
+            ]
 
-            # Badge ringkasan
-            st.markdown(
-                f"<div style='font-size:0.78rem;color:#64748b;margin:-6px 0 8px'>"
-                f"🚦 <b style='color:#34d399'>{online_cam}</b> online &nbsp;·&nbsp; "
-                f"🔴 <b style='color:#fca5a5'>{total_cam - online_cam}</b> offline &nbsp;·&nbsp; "
-                f"menampilkan <b style='color:#93c5fd'>{shown_cam}</b> kamera</div>",
-                unsafe_allow_html=True
-            )
+        total_cam   = len(tl_items)
+        online_cam  = sum(1 for i in tl_items if i["attributes"].get("connected"))
+        shown_cam   = len(filtered_items)
 
+        with pick_c3:
             if filtered_items:
                 label_to_item = {}
                 for i in filtered_items:
                     lbl = make_label(i)
-                    # hindari duplikat label
                     base = lbl
                     counter = 1
                     while lbl in label_to_item:
@@ -736,7 +842,7 @@ with tab_live:
 
                 labels = sorted(label_to_item.keys())
                 chosen_label = st.selectbox(
-                    f"Pilih simpang / lampu merah ({len(labels)} tersedia)",
+                    f"📹 Pilih Kamera ({len(labels)} tersedia)",
                     options=labels,
                     key="tl_cctv_select"
                 )
@@ -747,82 +853,63 @@ with tab_live:
                 cam_group    = chosen_item["attributes"].get("group_name", "")
                 cam_lat      = chosen_item["attributes"].get("lat")
                 cam_lng      = chosen_item["attributes"].get("lng")
-
             else:
-                st.warning("Tidak ada kamera yang cocok.")
+                st.warning("Kamera tidak ditemukan.")
                 stream_url = None
                 is_connected = False
                 cam_name = cam_group = ""
                 cam_lat = cam_lng = None
 
-            custom_m3u8 = st.text_input(
-                "🔗 Atau tempel URL Stream (.m3u8) Kustom (opsional)",
-                value="",
-                placeholder="https://cctvjss.jogjakota.go.id/malioboro/NolKm_Utara.stream/playlist.m3u8",
-                key="tl_custom_m3u8_url",
-            ).strip()
-            if custom_m3u8:
-                stream_url = custom_m3u8
-                is_connected = True
-                cam_name = f"Kustom CCTV ({custom_m3u8.split('/')[-2] if '/' in custom_m3u8 else 'Stream'})"
-
-        with col_info:
-            st.markdown(f"""
-            <div style='
-                background: linear-gradient(135deg, rgba(220,38,38,0.12), rgba(239,68,68,0.06));
-                border: 1px solid rgba(239,68,68,0.3);
-                border-radius: 12px;
-                padding: 14px;
-                font-size: 0.79rem;
-                color: #fca5a5;
-                margin-top: 28px;
-                line-height: 1.8;
-            '>
-                <b style='color:#f87171;font-size:0.9rem'>🚦 CCTV Lampu Merah Jogja</b><br>
-                📡 <b>API Resmi ATCS Pemprov DIY</b><br>
-                🎯 Khusus simpang / persimpangan<br>
-                📹 Format: HLS (m3u8) — Live<br>
-                🔑 Tanpa API Key / Login<br>
-                🗺 Seluruh wilayah DIY
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown("---")
+        # Baris ringkas status sumber + opsi URL kustom tersembunyi agar tampilan bersih
+        info_c1, info_c2 = st.columns([2.2, 1.8])
+        with info_c1:
+            st.caption(
+                f"📡 Sumber: ATCS Pemkot Yogyakarta (`cctv.jogjakota.go.id`) · "
+                f"🟢 {online_cam} online / {shown_cam} tampil"
+            )
+        with info_c2:
+            with st.expander("🔗 Pakai URL Stream (.m3u8) Kustom"):
+                custom_m3u8 = st.text_input(
+                    "URL Stream HLS (.m3u8)",
+                    value="",
+                    placeholder="https://cctvjss.jogjakota.go.id/malioboro/NolKm_Utara.stream/playlist.m3u8",
+                    key="tl_custom_m3u8_url",
+                ).strip()
+                if custom_m3u8:
+                    stream_url = custom_m3u8
+                    is_connected = True
+                    cam_name = f"Kustom CCTV ({custom_m3u8.split('/')[-2] if '/' in custom_m3u8 else 'Stream'})"
 
         cctv_tab_mode = st.radio(
-            "📺 Mode Tampilan Live CCTV:",
+            "Mode Tampilan:",
             [
-                "🎯 Deteksi AI Real-time (YOLOv8 — Kotak Mengikuti Kendaraan Asli)",
-                "📹 Siaran Langsung Kamera (HLS Player — Feed Kamera Asli)",
+                "🎯 Deteksi AI Real-time",
+                "📹 Feed CCTV Asli (Tanpa AI)",
             ],
             horizontal=True,
-            key="cctv_view_mode_toggle"
+            key="cctv_view_mode_toggle",
+            label_visibility="collapsed"
         )
 
         if cctv_tab_mode.startswith("🎯"):
-            st.markdown(f"""
-            <div style='background:rgba(15,23,42,0.85); border:1px solid rgba(59,130,246,0.35);
-                        border-radius:12px; padding:12px 18px; margin:10px 0 16px; font-size:0.83rem; color:#cbd5e1'>
-                🎯 <b>Mode Deteksi AI Real-time (YOLOv8 + ByteTrack):</b> Model AI memproses frame siaran CCTV langsung.
-                Setiap kotak deteksi (bounding box) <b style='color:#34d399'>100% menempel dan mengikuti pergerakan nyata kendaraan</b>
-                (mobil, sepeda motor, truk, bus) yang tertangkap kamera simpang.
-            </div>
-            """, unsafe_allow_html=True)
-
-            ai_col1, ai_col2, ai_col3 = st.columns([1.2, 1, 1.8])
+            ai_col1, ai_col2, ai_col3 = st.columns([1.4, 0.9, 1.4])
             with ai_col1:
-                btn_start_ai = st.button("▶ Mulai Deteksi AI Real-time", type="primary", use_container_width=True, key="btn_start_live_yolo")
+                btn_start_ai = st.button("▶ Mulai Deteksi AI", type="primary", use_container_width=True, key="btn_start_live_yolo")
             with ai_col2:
-                btn_stop_ai = st.button("⏹ Hentikan", use_container_width=True, key="btn_stop_live_yolo")
+                btn_stop_ai = st.button("⏹ Berhenti", use_container_width=True, key="btn_stop_live_yolo")
             with ai_col3:
-                btn_snap_ai = st.button("📸 Ambil 1 Frame Deteksi Sekarang", use_container_width=True, key="btn_snap_live_yolo")
+                btn_snap_ai = st.button("📸 Cek 1 Frame Sekarang", use_container_width=True, key="btn_snap_live_yolo")
 
             if btn_start_ai:
                 st.session_state["live_yolo_active"] = True
             if btn_stop_ai:
+                if st.session_state.get("live_yolo_active", False):
+                    with st.spinner("⏹ Menghentikan deteksi AI & menutup koneksi CCTV..."):
+                        time.sleep(0.5)
+                    st.toast("⏹ Deteksi AI dihentikan.", icon="✅")
                 st.session_state["live_yolo_active"] = False
 
-            with st.expander("⚙️ Konfigurasi Lajur Simpang, Garis Henti & AI Sensitivity (Simpang Ini)"):
+            with st.expander("⚙️ Pengaturan Garis Henti, Lampu & Mode AI"):
                 cfg_c1, cfg_c2 = st.columns(2)
                 custom_stopline_y = cfg_c1.slider("📏 Posisi Garis Henti (Y pixel)", 100, 560, 360, 10, key="cctv_tab_stopline_y")
                 custom_roi_x = cfg_c2.slider("🚦 Posisi ROI Lampu (X pixel)", 0, 920, 680, 10, key="cctv_tab_roi_x")
@@ -856,7 +943,10 @@ with tab_live:
 
             if st.session_state.get("live_yolo_active", False) and stream_url:
                 if stop_ctrl_placeholder.button("⏹ Klik di Sini untuk Berhenti Siaran AI", type="secondary", use_container_width=True, key="stop_inline_btn"):
+                    with st.spinner("⏹ Menghentikan siaran AI & menutup stream..."):
+                        time.sleep(0.5)
                     st.session_state["live_yolo_active"] = False
+                    st.toast("⏹ Siaran AI dihentikan.", icon="✅")
                     st.rerun()
 
                 # Update konfigurasi cctv_live dengan batas lajur jalan yang dipantau
@@ -870,18 +960,24 @@ with tab_live:
                     "description": f"Live CCTV: {cam_name}",
                 }
 
-                eng = TrafficViolationEngine("cctv_live", db_manager=db)
-                eng.night_mode = night_enhancement
-                eng.enable_gender_detection = enable_gender_mode
-                eng._load_model()
-                if enable_gender_mode:
-                    with st.spinner("Memuat model klasifikasi gender pejalan kaki (Pria/Wanita)..."):
+                with st.status(f"🚀 Menyiapkan Deteksi AI untuk {cam_name}...", expanded=True) as init_status:
+                    st.write("🧠 Memuat model YOLOv8n + ByteTrack...")
+                    eng = TrafficViolationEngine("cctv_live", db_manager=db)
+                    eng.night_mode = night_enhancement
+                    eng.enable_gender_detection = enable_gender_mode
+                    eng._load_model()
+
+                    if enable_gender_mode:
+                        st.write("🚻 Memuat model klasifikasi gender (Pria/Wanita)...")
                         eng._load_gender_model()
-                cap = eng._open_video_source()
-                try:
-                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                except Exception:
-                    pass
+
+                    st.write("📡 Menghubungkan ke siaran langsung CCTV...")
+                    cap = eng._open_video_source()
+                    try:
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
+                    init_status.update(label=f"✅ Siaran AI Aktif — {cam_name}", state="complete", expanded=False)
 
                 st.caption("ℹ️ Siaran CCTV AI bergerak terus secara real-time. Kotak AI menghitung jarak setiap kendaraan ke garis henti.")
 
