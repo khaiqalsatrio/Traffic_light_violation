@@ -18,6 +18,7 @@ import logging
 import time
 import subprocess
 import requests
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple, Dict, List, Any, TYPE_CHECKING
@@ -179,6 +180,12 @@ class TrafficViolationEngine:
         self.track_history: dict = {}       # Riwayat koordinat track: {track_id: [(cx, cy), ...]}
         self.night_mode = False             # Mode peningkatan kontras malam hari (CLAHE)
 
+        # Klasifikasi gender pejalan kaki (opsional, lazy-loaded)
+        self.enable_gender_detection = False
+        self.gender_processor = None
+        self.gender_model = None
+        self.gender_cache: dict = {}        # {track_id: ("Pria"|"Wanita", confidence)}
+
         # Frame terbaru untuk preview visual (termasuk kotak deteksi / overlay)
         self.latest_frame: Optional[np.ndarray] = None
         self.latest_annotated_frame: Optional[np.ndarray] = None
@@ -200,6 +207,71 @@ class TrafficViolationEngine:
         logger.info(f"🔄 Memuat model YOLO dari: {YOLO_MODEL_PATH}")
         self.model = YOLO(str(YOLO_MODEL_PATH))
         logger.info("✅ Model YOLO berhasil dimuat.")
+
+    def _load_gender_model(self):
+        """Memuat model klasifikasi gender pejalan kaki (NTQAI/pedestrian_gender_recognition)."""
+        if self.gender_model is not None and self.gender_processor is not None:
+            return
+        try:
+            from transformers import AutoImageProcessor, AutoModelForImageClassification
+            model_id = "NTQAI/pedestrian_gender_recognition"
+            logger.info(f"🔄 Memuat model gender pejalan kaki: {model_id}")
+            self.gender_processor = AutoImageProcessor.from_pretrained(model_id)
+            self.gender_model = AutoModelForImageClassification.from_pretrained(model_id)
+            self.gender_model.eval()
+            logger.info("✅ Model gender pejalan kaki berhasil dimuat.")
+        except Exception as e:
+            logger.warning(f"⚠️ Gagal memuat model gender pejalan kaki: {e}")
+            self.gender_processor = None
+            self.gender_model = None
+
+    def _update_pedestrian_genders(self, frame: np.ndarray, tracks: List, max_per_frame: int = 2):
+        """
+        Mengklasifikasikan gender ('Pria' / 'Wanita') untuk track 'person' yang belum ada di cache.
+        Dibatasi max_per_frame agar FPS video real-time tetap lancar di CPU.
+        """
+        if not self.enable_gender_detection or self.gender_model is None or self.gender_processor is None:
+            return
+
+        import torch
+        from PIL import Image
+
+        fh, fw = frame.shape[:2]
+        classified_now = 0
+
+        for track in tracks:
+            x1, y1, x2, y2, track_id, class_name = track[0], track[1], track[2], track[3], track[4], track[5]
+            if class_name != "person" or track_id <= 0 or track_id in self.gender_cache:
+                continue
+            if classified_now >= max_per_frame:
+                break
+
+            cx1, cy1 = max(0, x1), max(0, y1)
+            cx2, cy2 = min(fw, x2), min(fh, y2)
+            if (cx2 - cx1) < 20 or (cy2 - cy1) < 28:
+                continue
+
+            try:
+                crop_bgr = frame[cy1:cy2, cx1:cx2]
+                crop_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(crop_rgb)
+                inputs = self.gender_processor(images=pil_img, return_tensors="pt")
+                with torch.no_grad():
+                    outputs = self.gender_model(**inputs)
+                    probs = torch.softmax(outputs.logits, dim=-1)[0]
+                    pred_idx = int(probs.argmax().item())
+                    pred_conf = float(probs[pred_idx].item())
+
+                raw_label = str(self.gender_model.config.id2label.get(pred_idx, "")).lower()
+                if "female" in raw_label or "woman" in raw_label or "wanita" in raw_label:
+                    gender_id = "Wanita"
+                else:
+                    gender_id = "Pria"
+
+                self.gender_cache[track_id] = (gender_id, pred_conf)
+                classified_now += 1
+            except Exception:
+                continue
 
     def _track_frame(self, frame: np.ndarray, conf_threshold: float = None) -> List:
         """
@@ -420,6 +492,11 @@ class TrafficViolationEngine:
         """
         x1, y1, x2, y2, *_ = track
         track_id = track[4]
+        class_name = track[5]
+
+        # Pejalan kaki tidak termasuk pelanggar lampu merah kendaraan
+        if class_name == "person":
+            return False
 
         # Titik referensi kendaraan: titik tengah bawah bounding box
         vehicle_bottom_y = y2
@@ -456,6 +533,26 @@ class TrafficViolationEngine:
         # 3. Pengecekan posisi memotong garis henti
         crossed = vehicle_bottom_y >= line_y and in_lane_x
         return crossed
+
+    # --------------------------------------------------
+    # SUARA ALARM PERINGATAN (AUDIO ALERT)
+    # --------------------------------------------------
+
+    def _play_violation_alarm(self):
+        """
+        Membunyikan nada alarm peringatan saat pelanggaran terdeteksi.
+        Dijalankan di background thread agar tidak memperlambat pemrosesan video (FPS tetap tinggi).
+        """
+        def _sound_worker():
+            try:
+                import winsound
+                # Dua nada beep sirine polisi/alert (frekuensi 1200Hz dan 900Hz)
+                winsound.Beep(1200, 180)
+                winsound.Beep(850, 220)
+            except Exception:
+                pass
+
+        threading.Thread(target=_sound_worker, daemon=True).start()
 
     # --------------------------------------------------
     # SIMPAN FOTO BUKTI
@@ -526,23 +623,36 @@ class TrafficViolationEngine:
         cv2.putText(frame, "🚦 ROI LAMPU", (rx, max(18, ry - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (245, 158, 11), 1)
 
-        # Mapping nama jenis kendaraan ke Bahasa Indonesia
+        # Mapping nama jenis objek ke Bahasa Indonesia
         CLASS_DISPLAY = {
+            "person": "Pejalan Kaki",
             "car": "Mobil",
             "motorcycle": "Sepeda Motor",
             "bus": "Bus",
             "truck": "Truk"
         }
 
-        # Bounding box setiap kendaraan yang dilacak (mengikuti pergerakan asli kendaraan)
+        # Bounding box setiap objek yang dilacak (mengikuti pergerakan asli kendaraan & pejalan kaki)
         for track in tracks:
             x1, y1, x2, y2 = track[0], track[1], track[2], track[3]
             track_id = track[4]
             class_name = track[5]
             conf = track[6] if len(track) > 6 else None
 
-            is_violator = track_id in self.violated_ids
-            color = (0, 0, 245) if is_violator else (34, 197, 94)
+            is_person = (class_name == "person")
+            gender_info = self.gender_cache.get(track_id) if (is_person and self.enable_gender_detection) else None
+            is_violator = (not is_person) and (track_id in self.violated_ids)
+            if is_violator:
+                color = (0, 0, 245)       # Merah: Pelanggar
+            elif is_person:
+                if gender_info and gender_info[0] == "Wanita":
+                    color = (180, 105, 255)  # Pink/Magenta: Wanita
+                elif gender_info and gender_info[0] == "Pria":
+                    color = (255, 160, 40)   # Biru: Pria
+                else:
+                    color = (255, 200, 0)    # Cyan: Pejalan Kaki
+            else:
+                color = (34, 197, 94)     # Hijau: Kendaraan Aman
 
             bw = max(10, x2 - x1)
             bh = max(10, y2 - y1)
@@ -566,10 +676,14 @@ class TrafficViolationEngine:
             cv2.line(frame, (x2, y2), (x2 - cl, y2), color, t_corner)
             cv2.line(frame, (x2, y2), (x2, y2 - cl), color, t_corner)
 
-            # 3. Badge Label nama kendaraan & track ID
-            disp_name = CLASS_DISPLAY.get(class_name, class_name.title())
+            # 3. Badge Label nama objek & track ID
+            if is_person and gender_info:
+                disp_name = gender_info[0]
+                conf_str = f" [{int(gender_info[1] * 100)}%]"
+            else:
+                disp_name = CLASS_DISPLAY.get(class_name, class_name.title())
+                conf_str = f" [{int(conf * 100)}%]" if conf else ""
             id_str = f" #{track_id}" if track_id > 0 else ""
-            conf_str = f" [{int(conf * 100)}%]" if conf else ""
             label = f"{'🚨 PELANGGAR ' if is_violator else ''}{disp_name}{id_str}{conf_str}"
 
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1)
@@ -579,31 +693,39 @@ class TrafficViolationEngine:
             cv2.putText(frame, label, (x1 + 4, max(14, y1 - 4)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.48, text_color, 2)
 
-            # 4. Deteksi Jarak ke Garis Henti (Distance to Stopline)
+            # 4. Deteksi Jarak ke Garis Henti (Distance to Stopline) / Status Pejalan Kaki
             stopline_y = (sl_y1 + sl_y2) // 2
-            
-            # Pada sudut pandang kamera CCTV ATCS (kendaraan di atas bergerak menuju garis hijau di bawah),
-            # kendaraan berada di atas garis henti jika y2 < stopline_y.
-            # Jarak vertikal positif = jarak menuju garis henti
-            dist_px = stopline_y - y2
-            dist_m = abs(dist_px) * 0.08
 
-            if dist_px > 40:
-                # Masih berjarak aman menuju garis henti
-                dist_tag = f"Jarak: ~{dist_m:.1f}m"
-                dist_color = (200, 240, 200)
-            elif 0 <= dist_px <= 40:
-                # Zona mendekati garis henti (warning zone)
-                dist_tag = f"Mendekati: ~{dist_m:.1f}m"
-                dist_color = (0, 215, 255)
-            else:
-                # Sudah melewati garis henti (dist_px < 0)
-                if is_violator or self.is_red_light:
-                    dist_tag = f"LEWAT GARIS! (~{dist_m:.1f}m)"
-                    dist_color = (0, 0, 255)
+            if is_person:
+                if gender_info:
+                    dist_tag = f"Pejalan Kaki: {gender_info[0]}"
+                    dist_color = (220, 170, 255) if gender_info[0] == "Wanita" else (255, 210, 120)
                 else:
-                    dist_tag = "Melintas (Jalur Hijau)"
-                    dist_color = (34, 197, 94)
+                    dist_tag = "Pejalan Kaki (Manusia)"
+                    dist_color = (255, 220, 100)
+            else:
+                # Pada sudut pandang kamera CCTV ATCS (kendaraan di atas bergerak menuju garis hijau di bawah),
+                # kendaraan berada di atas garis henti jika y2 < stopline_y.
+                # Jarak vertikal positif = jarak menuju garis henti
+                dist_px = stopline_y - y2
+                dist_m = abs(dist_px) * 0.08
+
+                if dist_px > 40:
+                    # Masih berjarak aman menuju garis henti
+                    dist_tag = f"Jarak: ~{dist_m:.1f}m"
+                    dist_color = (200, 240, 200)
+                elif 0 <= dist_px <= 40:
+                    # Zona mendekati garis henti (warning zone)
+                    dist_tag = f"Mendekati: ~{dist_m:.1f}m"
+                    dist_color = (0, 215, 255)
+                else:
+                    # Sudah melewati garis henti (dist_px < 0)
+                    if is_violator or self.is_red_light:
+                        dist_tag = f"LEWAT GARIS! (~{dist_m:.1f}m)"
+                        dist_color = (0, 0, 255)
+                    else:
+                        dist_tag = "Melintas (Jalur Hijau)"
+                        dist_color = (34, 197, 94)
 
             (dtw, dth), _ = cv2.getTextSize(dist_tag, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
             cv2.rectangle(frame, (x1, y2 + 2), (x1 + dtw + 6, y2 + dth + 8), (15, 23, 42), -1)
@@ -618,7 +740,14 @@ class TrafficViolationEngine:
         status_color = (0, 0, 255) if self.is_red_light else (34, 197, 94)
 
         # Informasi HUD Atas
-        hud_str1 = f"AI: AKTIF (YOLOv8 + ByteTrack)  |  KENDARAAN: {len(tracks)}"
+        veh_count = sum(1 for t in tracks if t[5] != "person")
+        ped_count = sum(1 for t in tracks if t[5] == "person")
+        if self.enable_gender_detection:
+            pria_cnt = sum(1 for t in tracks if t[5] == "person" and self.gender_cache.get(t[4], ("", 0))[0] == "Pria")
+            wanita_cnt = sum(1 for t in tracks if t[5] == "person" and self.gender_cache.get(t[4], ("", 0))[0] == "Wanita")
+            hud_str1 = f"AI: AKTIF | KENDARAAN: {veh_count} | PRIA: {pria_cnt} | WANITA: {wanita_cnt}"
+        else:
+            hud_str1 = f"AI: AKTIF | KENDARAAN: {veh_count} | PEJALAN KAKI: {ped_count}"
         hud_str2 = f"LAMPU: {status_text}  |  PELANGGARAN: {self.violation_count}  |  FPS: {fps:.1f}"
 
         cv2.putText(frame, hud_str1, (16, 29),
@@ -697,6 +826,9 @@ class TrafficViolationEngine:
                             if self._check_stopline_crossing(track):
                                 self.violated_ids.add(track_id)
                                 self.violation_count += 1
+
+                                # Bunyikan suara alarm peringatan
+                                self._play_violation_alarm()
 
                                 # Simpan foto bukti
                                 evidence_path = self._save_evidence(frame, track)

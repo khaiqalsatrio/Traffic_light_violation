@@ -231,6 +231,7 @@ _SIMPANG_KEYWORDS = [
     "simpang", "simpangan", "perempatan", "persimpangan",
     "lampu merah", "traffic", "atcs", "bundaran",
     "pertigaan", "junction", "signal", "sinyal",
+    "nol km", "malioboro",
 ]
 
 # Peta wilayah berdasarkan kata kunci dalam nama grup / nama kamera
@@ -642,7 +643,7 @@ with tab_live:
         background: rgba(30,64,175,0.15);
         border: 1px solid rgba(99,179,237,0.25);
         border-radius: 10px;
-        padding: 10px 16px;
+        padding: 10px 16px; 
         font-size: 0.82rem;
         color: #93c5fd;
         margin-bottom: 16px;
@@ -695,12 +696,16 @@ with tab_live:
                 key="tl_search"
             )
             if search_q:
+                q_words = search_q.lower().split()
                 filtered_items = [
                     i for i in filtered_items
-                    if search_q.lower() in (
-                        (i["attributes"].get("alias_name") or "") + " " +
-                        (i["attributes"].get("name") or "")
-                    ).lower()
+                    if all(
+                        w in (
+                            (i["attributes"].get("alias_name") or "") + " " +
+                            (i["attributes"].get("name") or "")
+                        ).lower()
+                        for w in q_words
+                    )
                 ]
 
             # Hitung statistik
@@ -742,12 +747,24 @@ with tab_live:
                 cam_group    = chosen_item["attributes"].get("group_name", "")
                 cam_lat      = chosen_item["attributes"].get("lat")
                 cam_lng      = chosen_item["attributes"].get("lng")
+
             else:
                 st.warning("Tidak ada kamera yang cocok.")
                 stream_url = None
                 is_connected = False
                 cam_name = cam_group = ""
                 cam_lat = cam_lng = None
+
+            custom_m3u8 = st.text_input(
+                "🔗 Atau tempel URL Stream (.m3u8) Kustom (opsional)",
+                value="",
+                placeholder="https://cctvjss.jogjakota.go.id/malioboro/NolKm_Utara.stream/playlist.m3u8",
+                key="tl_custom_m3u8_url",
+            ).strip()
+            if custom_m3u8:
+                stream_url = custom_m3u8
+                is_connected = True
+                cam_name = f"Kustom CCTV ({custom_m3u8.split('/')[-2] if '/' in custom_m3u8 else 'Stream'})"
 
         with col_info:
             st.markdown(f"""
@@ -807,18 +824,34 @@ with tab_live:
 
             with st.expander("⚙️ Konfigurasi Lajur Simpang, Garis Henti & AI Sensitivity (Simpang Ini)"):
                 cfg_c1, cfg_c2 = st.columns(2)
-                custom_stopline_y = cfg_c1.slider("📏 Posisi Garis Henti (Y pixel)", 100, 700, 420, 10, key="cctv_tab_stopline_y")
-                custom_roi_x = cfg_c2.slider("🚦 Posisi ROI Lampu (X pixel)", 100, 1200, 900, 20, key="cctv_tab_roi_x")
-                
+                custom_stopline_y = cfg_c1.slider("📏 Posisi Garis Henti (Y pixel)", 100, 560, 360, 10, key="cctv_tab_stopline_y")
+                custom_roi_x = cfg_c2.slider("🚦 Posisi ROI Lampu (X pixel)", 0, 920, 680, 10, key="cctv_tab_roi_x")
+                custom_roi_y = cfg_c2.slider("🚦 Posisi ROI Lampu (Y pixel)", 0, 450, 120, 10, key="cctv_tab_roi_y")
+
                 cfg_c3, cfg_c4 = st.columns(2)
-                lane_range_x = cfg_c3.slider("🛣️ Batas Lajur Jalan Terpantau (X min - max pixel)", 0, 1280, (50, 1230), 10, key="cctv_tab_lane_x",
+                lane_range_x = cfg_c3.slider("🛣️ Batas Lajur Jalan Terpantau (X min - max pixel)", 0, 1024, (50, 980), 10, key="cctv_tab_lane_x",
                                              help="Batasi hanya pada lajur yang menuju lampu merah agar arus dari simpang lain tidak terdeteksi salah.")
-                ai_sensitivity = cfg_c4.slider("🎯 AI Confidence (Turunkan saat Malam Hari)", 0.15, 0.70, 0.30, 0.05, key="cctv_tab_conf",
+                light_mode = cfg_c3.selectbox(
+                    "🚦 Mode Status Lampu Lalu Lintas",
+                    [
+                        "🤖 Otomatis (Deteksi Kotak ROI)",
+                        "🔴 Paksa MERAH (Mode Pelanggaran)",
+                        "🟢 Paksa HIJAU (Jalur Aman)",
+                    ],
+                    key="cctv_tab_light_mode",
+                    help="Pilih Paksa MERAH jika lampu asli di CCTV terlalu kecil/jauh atau terhalang silau malam hari."
+                )
+                ai_sensitivity = cfg_c4.slider("🎯 AI Confidence (Turunkan saat Malam Hari)", 0.15, 0.70, 0.25, 0.05, key="cctv_tab_conf",
                                               help="Gunakan 0.20 - 0.25 saat malam hari agar motor di tempat gelap langsung terdeteksi.")
-                night_enhancement = cfg_c4.checkbox("🌙 Aktifkan Night Vision (Pencerah Kontras Motor Gelap)", value=True, key="cctv_tab_night_mode")
+                col_opt1, col_opt2, col_opt3 = cfg_c4.columns(3)
+                night_enhancement = col_opt1.checkbox("🌙 Night Vision", value=True, key="cctv_tab_night_mode")
+                enable_audio_alert = col_opt2.checkbox("🔊 Alarm Suara", value=True, key="cctv_tab_audio_alert")
+                enable_gender_mode = col_opt3.checkbox("🚻 Gender (Pria/Wanita)", value=False, key="cctv_tab_gender_mode",
+                                                       help="Klasifikasikan pejalan kaki menjadi Pria / Wanita (memuat model AI tambahan saat pertama kali dicentang).")
 
             frame_placeholder = st.empty()
             metrics_placeholder = st.empty()
+            audio_placeholder = st.empty()
             stop_ctrl_placeholder = st.empty()
 
             if st.session_state.get("live_yolo_active", False) and stream_url:
@@ -833,13 +866,17 @@ with tab_live:
                     "source": stream_url,
                     "source_type": "hls",
                     "stopline": (lane_x1, custom_stopline_y, lane_x2, custom_stopline_y),
-                    "traffic_light_roi": (custom_roi_x, 30, 150, 200),
+                    "traffic_light_roi": (custom_roi_x, custom_roi_y, 100, 120),
                     "description": f"Live CCTV: {cam_name}",
                 }
 
                 eng = TrafficViolationEngine("cctv_live", db_manager=db)
                 eng.night_mode = night_enhancement
+                eng.enable_gender_detection = enable_gender_mode
                 eng._load_model()
+                if enable_gender_mode:
+                    with st.spinner("Memuat model klasifikasi gender pejalan kaki (Pria/Wanita)..."):
+                        eng._load_gender_model()
                 cap = eng._open_video_source()
                 try:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -866,12 +903,19 @@ with tab_live:
                         # Resize untuk optimalisasi kecepatan inferensi
                         frame = cv2.resize(frame, (1024, 576))
 
-                        # Deteksi warna lampu lalu lintas
-                        light_c = eng.detect_traffic_light_color(frame)
-                        eng.is_red_light = (light_c == "red")
+                        # Deteksi warna lampu lalu lintas (atau gunakan override manual)
+                        if "Paksa MERAH" in light_mode:
+                            eng.is_red_light = True
+                        elif "Paksa HIJAU" in light_mode:
+                            eng.is_red_light = False
+                        else:
+                            light_c = eng.detect_traffic_light_color(frame)
+                            eng.is_red_light = (light_c == "red")
 
                         # Tracking AI YOLOv8 + ByteTrack dengan confidence yang dapat diatur
                         tracks = eng._track_frame(frame, conf_threshold=ai_sensitivity)
+                        if enable_gender_mode:
+                            eng._update_pedestrian_genders(frame, tracks, max_per_frame=2)
 
                         # Cek pelanggaran jika lampu merah
                         if eng.is_red_light:
@@ -880,6 +924,30 @@ with tab_live:
                                 if trk_id > 0 and trk_id not in eng.violated_ids and eng._check_stopline_crossing(t):
                                     eng.violated_ids.add(trk_id)
                                     eng.violation_count += 1
+                                    
+                                    # Bunyikan suara alarm jika opsi aktif
+                                    if enable_audio_alert:
+                                        eng._play_violation_alarm()
+                                        # Trigger suara beep polisi di browser via HTML5 Web Audio API
+                                        audio_placeholder.markdown("""
+                                        <script>
+                                            try {
+                                                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                                                const osc = ctx.createOscillator();
+                                                const gain = ctx.createGain();
+                                                osc.type = 'sawtooth';
+                                                osc.frequency.setValueAtTime(1100, ctx.currentTime);
+                                                osc.frequency.exponentialRampToValueAtTime(700, ctx.currentTime + 0.25);
+                                                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                                                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+                                                osc.connect(gain);
+                                                gain.connect(ctx.destination);
+                                                osc.start();
+                                                osc.stop(ctx.currentTime + 0.26);
+                                            } catch(e) {}
+                                        </script>
+                                        """, unsafe_allow_html=True)
+
                                     ev_path = eng._save_evidence(frame, t)
                                     eng.db.save_violation(
                                         cctv_location="cctv_live",
@@ -899,12 +967,20 @@ with tab_live:
 
                         # Update status metrics bar (menggunakan HTML markdown agar streaming lancar tanpa error container)
                         if frames_run % 4 == 0:
+                            veh_count = sum(1 for t in tracks if t[5] != "person")
+                            ped_count = sum(1 for t in tracks if t[5] == "person")
+                            pria_cnt = sum(1 for t in tracks if t[5] == "person" and eng.gender_cache.get(t[4], ("", 0))[0] == "Pria")
+                            wanita_cnt = sum(1 for t in tracks if t[5] == "person" and eng.gender_cache.get(t[4], ("", 0))[0] == "Wanita")
+                            ped_label = f"👨 {pria_cnt} Pria · 👩 {wanita_cnt} Wanita" if enable_gender_mode else f"{ped_count}"
                             lampu_color = "#f87171" if eng.is_red_light else "#34d399"
                             lampu_text = "🔴 MERAH" if eng.is_red_light else "🟢 HIJAU"
                             metrics_placeholder.markdown(f"""
                             <div style='display:flex; gap:10px; margin-top:8px; justify-content:space-between; flex-wrap:wrap'>
                               <div style='background:rgba(15,23,42,0.85); padding:8px 16px; border-radius:8px; border:1px solid rgba(59,130,246,0.3)'>
-                                🚗 <b>Kendaraan Terdeteksi:</b> <span style='color:#60a5fa; font-weight:700'>{len(tracks)}</span>
+                                🚗 <b>Kendaraan:</b> <span style='color:#60a5fa; font-weight:700'>{veh_count}</span>
+                              </div>
+                              <div style='background:rgba(15,23,42,0.85); padding:8px 16px; border-radius:8px; border:1px solid rgba(56,189,248,0.3)'>
+                                🚶 <b>Pejalan Kaki:</b> <span style='color:#38bdf8; font-weight:700'>{ped_label}</span>
                               </div>
                               <div style='background:rgba(15,23,42,0.85); padding:8px 16px; border-radius:8px; border:1px solid rgba(59,130,246,0.3)'>
                                 🚦 <b>Status Lampu:</b> <span style='color:{lampu_color}; font-weight:700'>{lampu_text}</span>
@@ -924,22 +1000,36 @@ with tab_live:
 
             elif btn_snap_ai and stream_url:
                 with st.spinner("Mengambil frame dan mendeteksi kendaraan nyata dengan YOLOv8..."):
+                    lane_x1, lane_x2 = lane_range_x
                     LOCATION_CONFIGS["cctv_live"] = {
                         "name": cam_name,
                         "source": stream_url,
                         "source_type": "hls",
-                        "stopline": (50, custom_stopline_y, 1230, custom_stopline_y),
-                        "traffic_light_roi": (custom_roi_x, 30, 150, 200),
+                        "stopline": (lane_x1, custom_stopline_y, lane_x2, custom_stopline_y),
+                        "traffic_light_roi": (custom_roi_x, custom_roi_y, 100, 120),
                         "description": f"Live CCTV: {cam_name}",
                     }
                     eng = TrafficViolationEngine("cctv_live", db_manager=db)
+                    eng.night_mode = night_enhancement
+                    eng.enable_gender_detection = enable_gender_mode
                     eng._load_model()
+                    if enable_gender_mode:
+                        eng._load_gender_model()
                     cap = eng._open_video_source()
                     ret, frame = cap.read()
                     cap.release()
                     if ret:
                         frame = cv2.resize(frame, (1024, 576))
-                        tracks = eng._track_frame(frame)
+                        if "Paksa MERAH" in light_mode:
+                            eng.is_red_light = True
+                        elif "Paksa HIJAU" in light_mode:
+                            eng.is_red_light = False
+                        else:
+                            light_c = eng.detect_traffic_light_color(frame)
+                            eng.is_red_light = (light_c == "red")
+                        tracks = eng._track_frame(frame, conf_threshold=ai_sensitivity)
+                        if enable_gender_mode:
+                            eng._update_pedestrian_genders(frame, tracks, max_per_frame=15)
                         annotated = eng._draw_overlay(frame.copy(), tracks, 30.0)
                         rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
                         frame_placeholder.image(rgb, width='stretch')

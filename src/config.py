@@ -228,6 +228,36 @@ FALLBACK_JOGJA_CCTV = [
             "lng": 110.37891,
             "connected": True,
         }
+    },
+    {
+        "type": "location-pins",
+        "id": "13",
+        "attributes": {
+            "slug": "nol-km-utara",
+            "name": "Nol Km - Utara",
+            "alias_name": "Nol Km - Utara (Malioboro / Pejalan Kaki)",
+            "group_name": "Dishub Kota Yogyakarta - Malioboro",
+            "pin_type": "cctv",
+            "stream_url": "https://cctvjss.jogjakota.go.id/malioboro/NolKm_Utara.stream/playlist.m3u8",
+            "lat": -7.80105,
+            "lng": 110.36495,
+            "connected": True,
+        }
+    },
+    {
+        "type": "location-pins",
+        "id": "14",
+        "attributes": {
+            "slug": "nol-km-timur",
+            "name": "Nol Km - Timur",
+            "alias_name": "Nol Km - Timur (Malioboro)",
+            "group_name": "Dishub Kota Yogyakarta - Malioboro",
+            "pin_type": "cctv",
+            "stream_url": "https://cctvjss.jogjakota.go.id/malioboro/NolKm_Timur.stream/playlist.m3u8",
+            "lat": -7.80122,
+            "lng": 110.36520,
+            "connected": True,
+        }
     }
 ]
 
@@ -237,10 +267,11 @@ FALLBACK_JOGJA_CCTV = [
 YOLO_MODEL_PATH = WEIGHTS_DIR / "yolov8n.pt"
 YOLO_CONFIDENCE = 0.45          # Threshold kepercayaan deteksi (0.0 - 1.0)
 YOLO_IOU_THRESHOLD = 0.45       # Threshold IoU untuk NMS
-YOLO_TARGET_CLASSES = [2, 3]    # COCO class IDs: 2=car, 3=motorcycle
+YOLO_TARGET_CLASSES = [0, 2, 3, 5, 7]    # COCO class IDs: 0=person, 2=car, 3=motorcycle, 5=bus, 7=truck
 
-# Mapping class ID COCO ke nama kendaraan
+# Mapping class ID COCO ke nama objek
 VEHICLE_CLASS_NAMES = {
+    0: "person",
     2: "car",
     3: "motorcycle",
     5: "bus",
@@ -260,13 +291,13 @@ MAX_STREAM_RETRY = 5            # Jumlah retry jika koneksi stream putus
 TRAFFIC_LIGHT_DETECT_METHOD = "color"   # Deteksi berbasis warna piksel dominan
 
 # Batas warna MERAH dalam ruang warna HSV (dua rentang karena merah melingkar di hue)
-RED_LOWER_1 = (0, 100, 100)
-RED_UPPER_1 = (10, 255, 255)
-RED_LOWER_2 = (160, 100, 100)
+RED_LOWER_1 = (0, 80, 80)
+RED_UPPER_1 = (15, 255, 255)
+RED_LOWER_2 = (160, 80, 80)
 RED_UPPER_2 = (180, 255, 255)
 
-# Luas area merah (piksel) agar dianggap lampu MERAH aktif
-RED_PIXEL_THRESHOLD = 200
+# Luas area merah (piksel) agar dianggap lampu MERAH aktif (lampu CCTV jarak jauh berukuran kecil)
+RED_PIXEL_THRESHOLD = 20
 
 # ==================================================
 # KONFIGURASI TITIK SIMPANG YOGYAKARTA
@@ -315,6 +346,14 @@ LOCATION_CONFIGS = {
         "stopline": (60, 420, 900, 420),
         "traffic_light_roi": (840, 50, 130, 180),
         "description": "Persimpangan Wirobrajan - Jl. KH. Ahmad Dahlan",
+    },
+    "nol_km_utara": {
+        "name": "Nol Km - Utara (Live CCTV Pejalan Kaki)",
+        "source": "https://cctvjss.jogjakota.go.id/malioboro/NolKm_Utara.stream/playlist.m3u8",
+        "source_type": "hls",
+        "stopline": (60, 420, 900, 420),
+        "traffic_light_roi": (840, 50, 130, 180),
+        "description": "Titik Nol Kilometer Utara - Malioboro Yogyakarta",
     },
     # ─────────────────────────────────────────────────────────────────────────
     # LOKASI CCTV REAL-TIME — HLS Stream dari API ATCS Jogja Istimewa
